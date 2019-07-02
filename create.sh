@@ -5,8 +5,8 @@
 
 phelp() {
 	echo "Script for automatic Virtual Machine creation for ESX"
-	echo "Usage: ./create.sh options: n <|c|i|r|s>"
-	echo "Where n: Name of VM (required), c: Number of virtual CPUs, i: location of an ISO image, r: RAM size in MB, s: Disk size in GB"
+	echo "Usage: ./create.sh options: n <|c|i|r|s|d>"
+	echo "Where n: Name of VM (required), c: Number of virtual CPUs, i: location of an ISO image, r: RAM size in MB, s: Disk size in GB, d: Data Store"
 	echo "Default values are: CPU: 2, RAM: 4096MB, HDD-SIZE: 20GB"
 }
 
@@ -14,6 +14,7 @@ phelp() {
 CPU=2
 RAM=4096
 SIZE=20
+STORE=STOR01
 ISO=""
 FLAG=true
 ERR=false
@@ -78,6 +79,14 @@ do
 						MSG="$MSG | The HDD size has to be an integer."
 					fi
 					;;
+		 d)
+					STORE=${OPTARG};
+					FLAG=false;
+					if [ -z $NAME ]; then
+						ERR=true
+						MSG="$MSG | Please make sure to enter a datastore name."
+					fi
+					;;
 				\?) echo "Unknown option: -$OPTARG" >&2; phelp; exit 1;;
         		:) echo "Missing option argument for -$OPTARG" >&2; phelp; exit 1;;
         		*) echo "Unimplimented option: -$OPTARG" >&2; phelp; exit 1;;
@@ -100,16 +109,16 @@ if [ -d "$NAME" ]; then
 fi
 
 #Creating the folder for the Virtual Machine
-mkdir ${NAME}
+mkdir /vmfs/volumes/$STORE/${NAME}
 
 #Creating the actual Virtual Disk file (the HDD) with vmkfstools
-vmkfstools -c "${SIZE}"G -a lsilogic $NAME/$NAME.vmdk
+vmkfstools -c "${SIZE}"G -a lsilogic /vmfs/volumes/$STORE/$NAME/$NAME.vmdk
 
 #Creating the config file
-touch $NAME/$NAME.vmx
+touch /vmfs/volumes/$STORE/$NAME/$NAME.vmx
 
 #writing information into the configuration file
-cat << EOF > $NAME/$NAME.vmx
+cat << EOF > /vmfs/volumes/$STORE/$NAME/$NAME.vmx
 
 config.version = "8"
 virtualHW.version = "7"
@@ -117,6 +126,8 @@ vmci0.present = "TRUE"
 displayName = "${NAME}"
 floppy0.present = "FALSE"
 numvcpus = "${CPU}"
+vcpu.hotadd = "TRUE"
+mem.hotadd = "TRUE"
 scsi0.present = "TRUE"
 scsi0.sharedBus = "none"
 scsi0.virtualDev = "lsilogic"
@@ -142,14 +153,14 @@ pciBridge7.virtualDev = "pcieRootPort"
 pciBridge7.functions = "8"
 ethernet0.pciSlotNumber = "32"
 ethernet0.present = "TRUE"
-ethernet0.virtualDev = "e1000"
-ethernet0.networkName = "Inside"
+ethernet0.virtualDev = "vmxnet3"
+ethernet0.networkName = "VM Network"
 ethernet0.generatedAddressOffset = "0"
-guestOS = "other26xlinux-64"
+guestOS = "centos7-64"
 EOF
 
 #Adding Virtual Machine to VM register - modify your path accordingly!!
-MYVM=`vim-cmd solo/registervm /vmfs/volumes/datastore1/${NAME}/${NAME}.vmx`
+MYVM=`vim-cmd solo/registervm /vmfs/volumes/$STORE/${NAME}/${NAME}.vmx`
 #Powering up virtual machine:
 vim-cmd vmsvc/power.on $MYVM
 
@@ -158,6 +169,7 @@ echo "Name: ${NAME}"
 echo "CPU: ${CPU}"
 echo "RAM: ${RAM}"
 echo "HDD-size: ${SIZE}"
+echo "Datastore: ${STORE}
 if [ -n "$ISO" ]; then
 	echo "ISO: ${ISO}"
 else
